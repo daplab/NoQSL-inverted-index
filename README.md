@@ -1,3 +1,3 @@
-# NoQSL-inverted-index
+# NoSQL-inverted-index
 ====
 
