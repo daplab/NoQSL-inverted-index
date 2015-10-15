@@ -2,12 +2,22 @@ package ch.daplab.training.tp1;
 
 
 import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
 
+import ch.daplab.training.tp1.logs.ApacheAccessLog;
+import ch.daplab.training.tp1.mapreduce.lib.output.StreamingTextOutputFormat;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.OutputFormat;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -23,22 +33,39 @@ public class IndexInverterJob extends Configured implements Tool {
     public static class IndexInverterMapper extends
             Mapper<LongWritable, Text, Text, Text> {
 
+        private final SimpleDateFormat sdf = new SimpleDateFormat("dd/MMM/yyyy:HH:mm:ss Z", Locale.US);
+        private static final char SEPARATOR = '|';
+
         private Text outputKey = new Text();
         private Text outputValue = new Text();
 
         @Override
         protected void map(LongWritable key, Text value, Context context)
                 throws IOException, InterruptedException {
-            // TBD
-            //
-            // value is a line of the log file.
-            // it should be parsed to extract the ip address,  the
-            // page requested as well as the time (yyyy, mm, dd, hh)
-            //
-            // the inverted index should be able to query per
-            // page and time, i.e. you need to build a key
-            // containing all these information
-            //
+
+            ApacheAccessLog aal = ApacheAccessLog.parseFromLogLine(value.toString());
+            try {
+
+                String invertedKey = aal.getEndpoint() + SEPARATOR
+                        + toKeyDate(aal.getDateTimeString());
+
+                outputKey.set(invertedKey);
+                outputValue.set(aal.getIpAddress());
+                context.write(outputKey, outputValue);
+
+            } catch (ParseException e) {
+                throw new RuntimeException(e);
+            }
+
+        }
+
+        private String toKeyDate(String dateTimeString) throws ParseException {
+            Date date = sdf.parse(dateTimeString);
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(date);
+            return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.MONTH) + "-"
+                    + StringUtils.leftPad(String.valueOf(cal.get(Calendar.DAY_OF_MONTH)), 2, '0') + "-"
+                    + StringUtils.leftPad(String.valueOf(cal.get(Calendar.HOUR_OF_DAY)), 2, '0');
         }
     }
 
@@ -49,13 +76,15 @@ public class IndexInverterJob extends Configured implements Tool {
         @Override
         protected void reduce(Text key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
-            // TBD
-            //
-            // the expected output is key:list of comma separated values.
-            // how could this be done efficiently? Mind memory constraints...
-            //
-        }
 
+            boolean first = true;
+            for (Text value: values) {
+
+                // see http://stackoverflow.com/questions/10140171/handling-large-output-values-from-reduce-step-in-hadoop
+                context.write(first? key : null, value);
+                first = false;
+            }
+        }
     }
 
     //@Override
@@ -68,13 +97,13 @@ public class IndexInverterJob extends Configured implements Tool {
         Path out = new Path(args[1]);
         out.getFileSystem(conf).delete(out, true);
         FileInputFormat.setInputPaths(job, in);
-        FileOutputFormat.setOutputPath(job,  out);
+        StreamingTextOutputFormat.setOutputPath(job,  out);
 
         job.setMapperClass(IndexInverterMapper.class);
         job.setReducerClass(IndexInverterReducer.class);
 
         job.setInputFormatClass(TextInputFormat.class);
-        job.setOutputFormatClass(TextOutputFormat.class);
+        job.setOutputFormatClass(StreamingTextOutputFormat.class);
 
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(Text.class);
@@ -95,3 +124,4 @@ public class IndexInverterJob extends Configured implements Tool {
         }
     }
 }
+
