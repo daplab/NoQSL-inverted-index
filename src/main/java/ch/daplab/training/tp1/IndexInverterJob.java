@@ -33,7 +33,7 @@ public class IndexInverterJob extends Configured implements Tool {
     public static class IndexInverterMapper extends
             Mapper<LongWritable, Text, Text, Text> {
 
-        private final SimpleDateFormat sdf = new SimpleDateFormat("dd/MMM/yyyy:HH:mm:ss Z", Locale.US);
+        private static final SimpleDateFormat sdfymd = new SimpleDateFormat("yyyy-MM-dd-HH", Locale.US);
         private static final char SEPARATOR = '|';
 
         private Text outputKey = new Text();
@@ -43,31 +43,25 @@ public class IndexInverterJob extends Configured implements Tool {
         protected void map(LongWritable key, Text value, Context context)
                 throws IOException, InterruptedException {
 
-            ApacheAccessLog aal = ApacheAccessLog.parseFromLogLine(value.toString());
             try {
+                ApacheAccessLog aal = ApacheAccessLog.parseFromLogLine(value.toString());
 
-                String invertedKey = aal.getEndpoint() + SEPARATOR
-                        + toKeyDate(aal.getDateTimeString());
-
+                String invertedKey = aal.getEndpoint() + SEPARATOR + toKeyDate(aal.getDateTime());
                 outputKey.set(invertedKey);
                 outputValue.set(aal.getIpAddress());
-                context.write(outputKey, outputValue);
 
+                context.write(outputKey, outputValue);
             } catch (ParseException e) {
                 throw new RuntimeException(e);
             }
 
         }
 
-        private String toKeyDate(String dateTimeString) throws ParseException {
-            Date date = sdf.parse(dateTimeString);
-            Calendar cal = Calendar.getInstance();
-            cal.setTime(date);
-            return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.MONTH) + "-"
-                    + StringUtils.leftPad(String.valueOf(cal.get(Calendar.DAY_OF_MONTH)), 2, '0') + "-"
-                    + StringUtils.leftPad(String.valueOf(cal.get(Calendar.HOUR_OF_DAY)), 2, '0');
+        private String toKeyDate(Date date) {
+            return sdfymd.format(date);
         }
     }
+
 
     public static class IndexInverterReducer extends
             Reducer<Text, Text, Text, Text> {
@@ -77,13 +71,18 @@ public class IndexInverterJob extends Configured implements Tool {
         protected void reduce(Text key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
 
+            StringBuilder sb = new StringBuilder();
             boolean first = true;
-            for (Text value: values) {
-
-                // see http://stackoverflow.com/questions/10140171/handling-large-output-values-from-reduce-step-in-hadoop
-                context.write(first? key : null, value);
+            for (Text value : values) {
+                if (!first) {
+                    sb.append(',');
+                }
+                sb.append(value.toString());
                 first = false;
             }
+            outputValue.set(sb.toString());
+            context.write(key, outputValue);
+
         }
     }
 
@@ -97,7 +96,7 @@ public class IndexInverterJob extends Configured implements Tool {
         Path out = new Path(args[1]);
         out.getFileSystem(conf).delete(out, true);
         FileInputFormat.setInputPaths(job, in);
-        StreamingTextOutputFormat.setOutputPath(job,  out);
+        FileOutputFormat.setOutputPath(job, out);
 
         job.setMapperClass(IndexInverterMapper.class);
         job.setReducerClass(IndexInverterReducer.class);
@@ -110,7 +109,7 @@ public class IndexInverterJob extends Configured implements Tool {
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 
-        return job.waitForCompletion(true)?0:1;
+        return job.waitForCompletion(true) ? 0 : 1;
     }
 
     public static void main(String[] args) {
@@ -124,4 +123,3 @@ public class IndexInverterJob extends Configured implements Tool {
         }
     }
 }
-

@@ -3,6 +3,10 @@ package ch.daplab.training.tp1.logs;
 
 import java.io.Serializable;
 import java.lang.String;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -21,21 +25,23 @@ public class ApacheAccessLog implements Serializable {
     private String ipAddress;
     private String clientIdentd;
     private String userID;
-    private String dateTimeString;
+    private Date dateTime;
     private String method;
     private String endpoint;
     private String protocol;
     private int responseCode;
     private long contentSize;
 
+    private static final SimpleDateFormat sdf = new SimpleDateFormat("dd/MMM/yyyy:HH:mm:ss Z", Locale.US);
+
     private ApacheAccessLog(String ipAddress, String clientIdentd, String userID,
-                            String dateTime, String method, String endpoint,
+                            Date dateTime, String method, String endpoint,
                             String protocol, String responseCode,
                             String contentSize) {
         this.ipAddress = ipAddress;
         this.clientIdentd = clientIdentd;
         this.userID = userID;
-        this.dateTimeString = dateTime;
+        this.dateTime = dateTime;
         this.method = method;
         this.endpoint = endpoint;
         this.protocol = protocol;
@@ -55,8 +61,8 @@ public class ApacheAccessLog implements Serializable {
         return userID;
     }
 
-    public String getDateTimeString() {
-        return dateTimeString;
+    public Date getDateTime() {
+        return dateTime;
     }
 
     public String getMethod() {
@@ -91,8 +97,8 @@ public class ApacheAccessLog implements Serializable {
         this.userID = userID;
     }
 
-    public void setDateTimeString(String dateTimeString) {
-        this.dateTimeString = dateTimeString;
+    public void setDateTimeString(Date dateTimeString) {
+        this.dateTime = dateTime;
     }
 
     public void setMethod(String method) {
@@ -122,20 +128,22 @@ public class ApacheAccessLog implements Serializable {
             "^(\\S+) (\\S+) (\\S+) \\[([\\w:/]+\\s[+\\-]\\d{4})\\] \"(\\S+) (\\S+) (\\S+)\" (\\d{3}) (\\d+)";
     private static final Pattern PATTERN = Pattern.compile(LOG_ENTRY_PATTERN);
 
-    public static ApacheAccessLog parseFromLogLine(String logline) {
+    public static ApacheAccessLog parseFromLogLine(String logline) throws ParseException {
         Matcher m = PATTERN.matcher(logline);
         if (!m.find()) {
             logger.log(Level.ALL, "Cannot parse logline" + logline);
             throw new RuntimeException("Error parsing logline");
         }
 
-        return new ApacheAccessLog(m.group(1), m.group(2), m.group(3), m.group(4),
+        Date date = sdf.parse(m.group(4));
+
+        return new ApacheAccessLog(m.group(1), m.group(2), m.group(3), date,
                 m.group(5), m.group(6), m.group(7), m.group(8), m.group(9));
     }
 
     @Override public String toString() {
         return String.format("%s %s %s [%s] \"%s %s %s\" %s %s",
-                ipAddress, clientIdentd, userID, dateTimeString, method, endpoint,
+                ipAddress, clientIdentd, userID, sdf.format(dateTime), method, endpoint,
                 protocol, responseCode, contentSize);
     }
 }
